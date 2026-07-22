@@ -33,6 +33,7 @@ wlcctrl --windowactivate <w_uuid>
 wlcctrl --keystring 'text'                         # keyboard is fastest
 wlcctrl --key ctrl+s
 bash scripts/wlcctrl-window-click.sh <w_uuid> <rx> <ry> [button]   # scale-aware click
+bash scripts/wlcctrl-window-dblclick.sh <w_uuid> <rx> <ry> [button] [delay_ms]  # double-click (geometry queried ONCE, no re-verify)
 bash scripts/wlcctrl-drag.sh <w_uuid> <sx> <sy> <ex> <ey> [button] # drag
 ```
 
@@ -49,6 +50,7 @@ xdotool windowactivate <wid>
 xdotool type 'text'                                # keyboard is fastest
 xdotool key ctrl+s
 bash scripts/xdotool-window-click.sh <wid> <rx> <ry> [button]   # click
+bash scripts/xdotool-window-dblclick.sh <wid> <rx> <ry> [button] [delay_ms]  # double-click (native --repeat 2, single process)
 bash scripts/xdotool-drag.sh <wid> <sx> <sy> <ex> <ey> [button] # drag
 ```
 

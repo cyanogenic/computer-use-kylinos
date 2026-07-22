@@ -146,6 +146,16 @@ Known tested example:
 - Use one shell block for short deterministic sequences to reduce round trips, but keep a screenshot/vision checkpoint before fragile branches.
 - For Kaiming apps, executable symlinks under `/opt/kaiming/bin/` may be wrappers; use `kaiming list` to find the app ID and launch with `kaiming run <app-id>`.
 
+## Double-click (V11)
+
+**Why calling the click script twice fails:** each invocation of `wlcctrl-window-click.sh` re-queries geometry, outputs, and display scale (~3 × 0.3s), re-moves the mouse, and re-verifies location — totalling ~2s per click. Two sequential calls produce a ~4s gap, far exceeding the compositor's double-click threshold (~300–500ms).
+
+**Solution:** use `wlcctrl-window-dblclick.sh`. It queries geometry and scale **once**, moves the mouse **once** (no `--getmouselocation` verification), then fires two `--mousepress/--mouserelease` pairs separated by a configurable delay (default 80ms). The two clicks land within ~0.4s total, well inside the threshold.
+
+```bash
+bash scripts/wlcctrl-window-dblclick.sh <w_uuid> <rx> <ry> [button] [delay_ms]
+```
+
 ---
 
 # Part B — V10SP1 (X11 / xdotool)
@@ -253,3 +263,13 @@ The `xdotool-window-click.sh` and `xdotool-drag.sh` scripts do this conversion f
 - `xdotool` needs the window to be mapped/visible; a minimized window must be activated first.
 - On multi-monitor X11, `xdotool mousemove` uses the combined root-window coordinate space (monitors tiled), so `WX,WY` from `getwindowgeometry` are already global — no per-output offset needed.
 - If the session runs under Xwayland (rare on V10SP1), coordinates can differ; confirm protocol with `echo $XDG_SESSION_TYPE` (should be `x11`).
+
+## Double-click (V10SP1)
+
+**Why calling the click script twice is fragile:** two separate `xdotool-window-click.sh` invocations each re-query geometry, re-move, and re-verify (~0.2s each), plus two bash process startups. The total gap (~0.5–0.7s) sits right at the X server's double-click threshold and fails intermittently.
+
+**Solution:** use `xdotool-window-dblclick.sh`. It queries geometry **once**, moves the mouse **once**, then uses `xdotool click --repeat 2 --delay <ms>` — a **single xdotool process** that fires both clicks internally with precise timing (default 80ms apart). No inter-process gap.
+
+```bash
+bash scripts/xdotool-window-dblclick.sh <wid> <rx> <ry> [button] [delay_ms]
+```
