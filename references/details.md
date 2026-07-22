@@ -1,4 +1,13 @@
-# wlcom GUI Automation Details
+# KylinOS GUI Automation Details
+
+Two backends, picked by `scripts/detect-os.sh`:
+
+- **Part A — KylinOS V11** (Wayland / UKUI / wlcom) → `wlcctrl`
+- **Part B — KylinOS V10SP1** (X11 / UKUI) → `xdotool`
+
+---
+
+# Part A — V11 (Wayland / wlcctrl)
 
 ## Context
 
@@ -117,7 +126,7 @@ Known tested example:
 - `--mousemove` input about `(1720,1346)`
 - `--getmouselocation` returns about `(983,769)`
 
-## Reliable test pattern
+## Reliable test pattern (V11)
 
 1. Launch or focus the app and identify the target window.
 2. Capture the window in its current position; do not move it unless the test requires fixed placement, visibility recovery, or multi-monitor placement.
@@ -128,7 +137,7 @@ Known tested example:
 7. Capture again and verify visually or with OCR/image analysis.
 8. Log commands and outputs under `artifacts/` when reproducibility matters.
 
-## Performance notes
+## Performance notes (V11)
 
 - A single `wlcctrl` invocation can cost ~0.3s due to startup/graphics initialization.
 - Avoid repeated `--outputs`, `--getdisplaygeometry`, and `--getwindowgeometry` inside loops when values are stable.
@@ -136,3 +145,111 @@ Known tested example:
 - For known apps, cache window geometry and known control coordinates.
 - Use one shell block for short deterministic sequences to reduce round trips, but keep a screenshot/vision checkpoint before fragile branches.
 - For Kaiming apps, executable symlinks under `/opt/kaiming/bin/` may be wrappers; use `kaiming list` to find the app ID and launch with `kaiming run <app-id>`.
+
+---
+
+# Part B — V10SP1 (X11 / xdotool)
+
+## Context
+
+KylinOS V10SP1 Desktop uses UKUI on X11. There is no Wayland compositor, so use `xdotool` for pointer/keyboard and ImageMagick `import` (or `maim`/`scrot`) for screenshots.
+
+## Prerequisites
+
+```bash
+sudo apt install xdotool imagemagick   # imagemagick provides `import` for screenshots
+xdotool version
+import -version
+```
+
+If `import` is unavailable, alternatives: `maim -i <wid> /tmp/w.png` or `scrot` (full screen only). Prefer `import -window <wid>` because it captures just the target window, matching the coordinate space of the click/drag scripts.
+
+## Display and scale
+
+```bash
+xdpyinfo | grep -Ei 'dimensions|resolution'
+```
+
+**No fractional scaling in X11.** Screen coordinates are physical pixels; there is no output scale factor to apply. If the desktop uses integer scaling / DPI, `xdotool` mousemove coordinates still map 1:1 to `xdpyinfo` dimensions and to window-geometry coordinates, so no conversion is needed.
+
+## Windows
+
+```bash
+xdotool search --name '<title_regex>'          # window IDs by title
+xdotool search --onlyvisible --name ''         # all visible windows
+xdotool getactivewindow
+xdotool getwindowname <wid>
+xdotool getwindowgeometry --shell <wid>        # prints X=, Y=, WIDTH=, HEIGHT=
+xdotool windowactivate <wid>
+xdotool windowfocus <wid>
+xdotool windowmove <wid> <x> <y>               # absolute screen pixels
+xdotool windowsize <wid> <w> <h>
+```
+
+Window IDs are **decimal integers**. `getwindowgeometry --shell` is the easiest to parse in scripts (see `xdotool-window-click.sh`).
+
+## Screenshots
+
+```bash
+import -window <wid> /tmp/window.png           # single window (preferred)
+import /tmp/full.png                           # whole screen (interactive; needs click)
+maim /tmp/full.png                             # whole screen (non-interactive)
+```
+
+The window screenshot's `(0,0)` is the window top-left, matching the `(RX,RY)` used by the click/drag scripts.
+
+## Keyboard and pointer
+
+```bash
+xdotool type 'text to type'
+xdotool key ctrl+s
+xdotool key alt+F4
+xdotool keydown <key> ... xdotool keyup <key>  # hold a key
+xdotool getmouselocation
+xdotool mousemove <x> <y>                       # absolute screen pixels
+xdotool click <button>                          # 1=left 2=middle 3=right
+xdotool mousedown <button> ... xdotool mouseup <button>   # drag
+```
+
+Key names use X11 keysym names (`Return`, `Escape`, `Tab`, `space`, `Control_L`, `Alt_L`, etc.). Combos use `+`: `xdotool key ctrl+alt+t`. `xdotool type` sends literal text; use `--clearmodifiers` if stuck modifiers interfere.
+
+## Coordinate recipe (V10SP1)
+
+Given:
+
+- window geometry `X=WX, Y=WY`
+- target point in captured window image = `(RX, RY)`
+
+Then (no scale):
+
+```text
+screen_x = WX + RX
+screen_y = WY + RY
+```
+
+Run:
+
+```bash
+xdotool mousemove "$screen_x" "$screen_y"
+xdotool getmouselocation
+xdotool click 1
+```
+
+The `xdotool-window-click.sh` and `xdotool-drag.sh` scripts do this conversion for you.
+
+## Reliable test pattern (V10SP1)
+
+1. Launch or focus the app; find the target window via `xdotool search --name`.
+2. `xdotool windowactivate <wid>` and capture with `import -window <wid> /tmp/w.png`.
+3. Identify target controls from screenshot coordinates `(RX,RY)`.
+4. Prefer keyboard shortcuts/`xdotool type` when possible.
+5. For pointer tests, run `xdotool-window-click.sh <wid> <rx> <ry> [button]`; it verifies `getmouselocation` before clicking.
+6. For spinners/wheels, use `xdotool-drag.sh` with small steps and verify between steps.
+7. Capture again and verify visually or with OCR/image analysis.
+
+## Caveats (V10SP1)
+
+- `import -window <wid>` may include window decorations (title bar / borders) depending on the WM; if clicks land offset, measure the decoration height from a full-screen capture and subtract it from `RY`.
+- `xdotool` needs the window to be mapped/visible; a minimized window must be activated first.
+- On multi-monitor X11, `xdotool mousemove` uses the combined root-window coordinate space (monitors tiled), so `WX,WY` from `getwindowgeometry` are already global — no per-output offset needed.
+- If the session runs under Xwayland (rare on V10SP1), coordinates can differ; confirm protocol with `echo $XDG_SESSION_TYPE` (should be `x11`).
